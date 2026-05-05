@@ -34,5 +34,14 @@
     "author": "Test Dev",
     "category": "utility",
     "downloadUrl": "https://github.com/az925-crypto/Codeforge-plugin/releases/latest/download/wrap-tag.cfplugin"
+  },
+  {
+    "id": "com.syo.text-replacer-pro",
+    "name": "text-replacer-pro",
+    "version": "1.0.1",
+    "description": "",
+    "author": "SynhXAlina",
+    "category": "utility",
+    "downloadUrl": "https://github.com/az925-crypto/Codeforge-plugin/releases/latest/download/com.syo.text-replacer-pro.cfplugin"
   }
 ]
