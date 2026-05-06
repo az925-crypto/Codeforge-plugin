@@ -14,6 +14,10 @@ Panduan lengkap untuk membuat plugin CodeForge (`.cfplugin`).
   - [commands](#codeforgecommands)
   - [events](#codeforgeevents)
   - [http](#codeforgehttp)
+  - [storage](#codeforgestorage)
+  - [clipboard](#codeforgestorage)
+  - [file](#codeforgestorage)
+  - [share](#codeforgestorage)
 - [Permissions](#permissions)
 - [Cara Paket & Distribusi](#cara-paket--distribusi)
 - [Contoh Plugin Lengkap](#contoh-plugin-lengkap)
@@ -80,7 +84,7 @@ CodeForge.ui.showToast('Hello!');
 
 Membaca dan memanipulasi konten editor. **Membutuhkan permission `editor`.**
 
-> **Pengecualian:** `getLanguage()` dan `getCursorPosition()` tidak membutuhkan permission `editor`.
+> **Pengecualian:** `getLanguage()` dan `getCursorPosition()` tidak membutuhkan permission `editor`. Begitu juga `file.getLanguage()` — keduanya bisa dipanggil tanpa permission apapun.
 
 ```js
 // Ambil seluruh isi file yang sedang dibuka
@@ -109,6 +113,59 @@ var lang = CodeForge.editor.getLanguage();
 var pos = CodeForge.editor.getCursorPosition();
 // → { line: number, col: number }
 // Tidak butuh permission 'editor'
+
+// Ambil jumlah baris di editor
+var count = CodeForge.editor.getLineCount();
+// → number
+
+// Ambil isi baris tertentu (1-indexed)
+var line = CodeForge.editor.getLine(5);
+// → string
+
+// Ambil konten dalam range tertentu
+var text = CodeForge.editor.getContentInRange({ startLine: 1, startCol: 1, endLine: 3, endCol: 10 });
+// → string
+
+// Set selection ke range tertentu
+CodeForge.editor.setSelection(startLine, startCol, endLine, endCol);
+
+// Scroll editor ke baris tertentu
+CodeForge.editor.scrollToLine(10);
+
+// Replace semua kemunculan string (literal, bukan regex)
+CodeForge.editor.replaceAll('foo', 'bar');
+
+// Ambil kata di posisi kursor saat ini
+var word = CodeForge.editor.getWordAtCursor();
+// → string
+
+// Set editor menjadi read-only atau writable
+CodeForge.editor.setReadOnly(true);
+CodeForge.editor.setReadOnly(false);
+
+// Tambah dekorasi (highlight baris)
+var decorId = CodeForge.editor.addDecoration(startLine, endLine, 'my-css-class');
+// → string | null (id dekorasi)
+
+// Hapus dekorasi berdasarkan id
+CodeForge.editor.removeDecoration(decorId);
+```
+
+#### Simpan dan pakai selection untuk operasi async
+
+`replaceSelection` selalu menarget selection yang aktif *saat dipanggil*. Jika kamu menunggu HTTP response, user bisa memindahkan kursor sebelum response balik. Gunakan `saveSelection()` + `replaceRange()` untuk menghindari ini:
+
+```js
+CodeForge.commands.register('myCommand', function() {
+    var savedRange = CodeForge.editor.saveSelection();
+    // → { startLine, startCol, endLine, endCol } | null
+
+    CodeForge.http.post('https://api.example.com', { text: CodeForge.editor.getSelection() }, {})
+        .then(function(body) {
+            // Pakai range yang sudah disimpan — tidak terpengaruh pergerakan kursor
+            CodeForge.editor.replaceRange(savedRange, body);
+        });
+});
 ```
 
 **Language ID yang tersedia:**
@@ -153,6 +210,25 @@ CodeForge.ui.addToolbarButton('commandId', 'Label Tombol');
 CodeForge.ui.showInputDialog('Judul Dialog', 'Placeholder hint', function(value) {
     if (value) CodeForge.ui.showToast('Input: ' + value);
 });
+
+// Tampilkan dialog konfirmasi (OK / Cancel)
+// callback dipanggil dengan boolean: true jika user tekan OK
+CodeForge.ui.showConfirm('Judul', 'Yakin mau hapus?', function(confirmed) {
+    if (confirmed) CodeForge.ui.showToast('Dihapus!');
+});
+
+// Tampilkan dialog pilihan (dropdown / list)
+// options: array of string
+// callback dipanggil dengan string yang dipilih, atau null jika cancel
+CodeForge.ui.showSelect('Pilih Format', ['JSON', 'YAML', 'TOML'], function(value) {
+    if (value) CodeForge.ui.showToast('Dipilih: ' + value);
+});
+
+// Tampilkan indikator loading
+CodeForge.ui.showProgress('Memproses...');
+
+// Sembunyikan indikator loading
+CodeForge.ui.hideProgress();
 ```
 
 **Kapan harus panggil `addToolbarButton`?**
@@ -214,16 +290,16 @@ CodeForge.events.off('namaEvent', handler);
 
 | Event | Data | Keterangan |
 |---|---|---|
-| `fileOpen` | `{ fileName, language }` | File baru dibuka di editor |
-| `contentChange` | `{}` | Isi editor berubah — fire setiap keystroke |
+| `fileOpen` | `{ fileName, language, filePath }` | File baru dibuka di editor |
+| `contentChange` | `{}` | Isi editor berubah — di-debounce 300ms |
 | `cursorMove` | `{ line, col }` | Posisi kursor berubah |
 | `editorFocus` | `{}` | Editor mendapat fokus |
 | `fileSave` | `{ fileName }` | File berhasil disimpan |
 
-> ⚠️ **Peringatan `contentChange`:** Event ini fire **setiap ketukan keyboard**, bukan debounced. Jangan panggil `showToast` langsung di dalamnya — snackbar akan numpuk di queue dan terus muncul lama setelah user berhenti ngetik, membuat editor terasa broken.
+> ⚠️ **Peringatan `contentChange`:** Event ini di-debounce 300ms, bukan fire setiap keystroke mentah. Tetap hindari memanggil `showToast` langsung di dalamnya — gunakan tombol untuk aksi yang butuh feedback ke user.
 >
 > ```js
-> // ❌ Jangan lakukan ini — spam snackbar tiap keystroke
+> // ❌ Jangan lakukan ini
 > CodeForge.events.on('contentChange', function() {
 >     CodeForge.ui.showToast('Words: ' + countWords());
 > });
@@ -243,7 +319,6 @@ CodeForge.events.off('namaEvent', handler);
 > ⚠️ **Peringatan timer di `contentChange`:** Kalau kamu pakai `setTimeout` di dalam handler `contentChange`, **selalu cancel timer lama di handler `fileOpen`**. Setiap kali file baru dibuka, plugin di-reinject ulang dari awal — variabel `idleTimer`-mu reset ke nilai awal, sehingga timer dari sesi file sebelumnya tidak bisa di-cancel dan tetap jalan di background.
 >
 > ```js
-> // ❌ Timer lama tidak di-cancel saat ganti file
 > var idleTimer = null;
 >
 > CodeForge.events.on('contentChange', function() {
@@ -257,7 +332,6 @@ CodeForge.events.off('namaEvent', handler);
 > CodeForge.events.on('fileOpen', function() {
 >     clearTimeout(idleTimer); // ← wajib ada
 >     idleTimer = null;
->     // reset state lainnya di sini...
 > });
 > ```
 
@@ -282,9 +356,7 @@ CodeForge.http.get('https://api.example.com/data', {
 // POST request
 CodeForge.http.post('https://api.example.com/submit', {
     key: 'value'
-}, {
-    'Content-Type': 'application/json'
-}).then(function(responseBody) {
+}, {}).then(function(responseBody) {
     CodeForge.ui.showToast('Terkirim!');
 }).catch(function(err) {
     CodeForge.ui.showToast('Gagal: ' + err.message);
@@ -293,17 +365,17 @@ CodeForge.http.post('https://api.example.com/submit', {
 
 > **Penting:** HTTP (non-HTTPS) tidak diizinkan dan akan langsung ditolak.
 
-> **Jangan set `Content-Type` manual di header POST.** Platform sudah otomatis set `Content-Type: application/json; charset=utf-8` dari sisi Kotlin. Kalau kamu tambahkan lagi via header, OkHttp akan kirim dua `Content-Type` sekaligus.
+> **Jangan set `Content-Type` manual di header POST.** Platform sudah otomatis set `Content-Type: application/json; charset=utf-8`. Kalau kamu tambahkan lagi via header, OkHttp akan kirim dua `Content-Type` sekaligus.
 >
 > ```js
-> // ❌ Redundant — Content-Type sudah di-set otomatis
+> // ❌ Redundant
 > CodeForge.http.post(url, { key: 'value' }, { 'Content-Type': 'application/json' });
 >
 > // ✅ Cukup begini
 > CodeForge.http.post(url, { key: 'value' }, {});
 > ```
 
-> ⚠️ **Plugin HTTP async — wajib pakai loading guard.** Tanpa guard, klik tombol berkali-kali sebelum response balik akan mengirim banyak request paralel dan hasilnya bisa tabrakan di editor.
+> ⚠️ **Plugin HTTP async — wajib pakai loading guard.** Tanpa guard, klik tombol berkali-kali sebelum response balik akan mengirim banyak request paralel.
 >
 > ```js
 > var isProcessing = false;
@@ -314,6 +386,7 @@ CodeForge.http.post('https://api.example.com/submit', {
 >     if (!sel) { CodeForge.ui.showToast('Pilih teks dulu'); return; }
 >
 >     isProcessing = true;
+>     CodeForge.ui.showProgress('Memproses...');
 >     CodeForge.http.post('https://api.example.com', { text: sel }, {})
 >         .then(function(body) {
 >             // proses response
@@ -322,12 +395,106 @@ CodeForge.http.post('https://api.example.com/submit', {
 >             CodeForge.ui.showToast('Error');
 >         })
 >         .then(function() {
->             isProcessing = false; // selalu reset di akhir
+>             isProcessing = false;
+>             CodeForge.ui.hideProgress();
 >         });
 > });
 > ```
 
-> ⚠️ **`replaceSelection` setelah async tidak menjamin posisi yang benar.** `replaceSelection` selalu menarget selection yang aktif *saat dipanggil*, bukan saat tombol diklik. Kalau user memindahkan kursor selagi menunggu response, teks hasil akan masuk di posisi yang salah. Ini adalah keterbatasan platform saat ini — belum ada API `replaceRange(range, text)` untuk menarget range yang sudah disimpan sebelumnya.
+---
+
+### `CodeForge.storage`
+
+Menyimpan data persisten per-plugin. Data disimpan di SharedPreferences dan tetap ada setelah app ditutup. **Tidak membutuhkan permission.**
+
+```js
+// Simpan nilai (key dan value harus string)
+CodeForge.storage.set('myKey', 'myValue');
+
+// Ambil nilai — async via callback
+// callback dipanggil dengan string jika key ada, atau null jika tidak ada
+CodeForge.storage.get('myKey', function(value) {
+    if (value !== null) {
+        CodeForge.ui.showToast('Nilai: ' + value);
+    }
+});
+
+// Hapus key
+CodeForge.storage.remove('myKey');
+```
+
+> **Catatan:** `storage.set` dan `storage.remove` sinkron (fire-and-forget). `storage.get` async via callback.
+
+---
+
+### `CodeForge.clipboard`
+
+Membaca dan menulis ke clipboard sistem. **Tidak membutuhkan permission.**
+
+```js
+// Tulis teks ke clipboard
+CodeForge.clipboard.write('teks yang disalin');
+
+// Baca teks dari clipboard — async via callback
+CodeForge.clipboard.read(function(text) {
+    CodeForge.ui.showToast('Clipboard: ' + text);
+});
+```
+
+---
+
+### `CodeForge.file`
+
+Mengakses informasi file yang sedang dibuka dan file-file di project. **Tidak membutuhkan permission.**
+
+```js
+// Ambil nama file yang sedang dibuka
+var name = CodeForge.file.getName();
+// → contoh: 'index.js'
+
+// Ambil ekstensi file (tanpa titik)
+var ext = CodeForge.file.getExtension();
+// → contoh: 'js'
+
+// Ambil path absolut file yang sedang dibuka
+var path = CodeForge.file.getPath();
+// → contoh: '/storage/emulated/0/MyProject/index.js'
+
+// Ambil language ID file yang sedang dibuka
+var lang = CodeForge.file.getLanguage();
+// → contoh: 'javascript'
+
+// Ambil daftar semua file di project yang sedang aktif
+// callback dipanggil dengan array of { name, path, language }
+CodeForge.file.getProjectFiles(function(files) {
+    files.forEach(function(f) {
+        CodeForge.ui.showToast(f.name + ' — ' + f.language);
+    });
+});
+
+// Baca isi file dari path tertentu di project
+// callback dipanggil dengan (success: boolean, content: string)
+CodeForge.file.readFile('/storage/emulated/0/MyProject/utils.js', function(success, content) {
+    if (success) {
+        CodeForge.ui.showToast('File dibaca: ' + content.length + ' karakter');
+    } else {
+        CodeForge.ui.showToast('Gagal baca: ' + content); // content berisi pesan error
+    }
+});
+```
+
+> **Catatan:** `file.save()` tersedia di API tapi belum berfungsi di versi ini.
+
+---
+
+### `CodeForge.share`
+
+Membagikan teks ke aplikasi lain via Android share sheet. **Tidak membutuhkan permission.**
+
+```js
+// Bagikan teks ke aplikasi lain
+CodeForge.share.text('Isi yang ingin dibagikan', 'Judul Share (opsional)');
+```
 
 ---
 
@@ -337,8 +504,10 @@ Deklarasikan permission di `manifest.json` sesuai API yang kamu butuhkan.
 
 | Permission | Untuk apa |
 |---|---|
-| `editor` | Menggunakan `CodeForge.editor.getContent/setContent/getSelection/replaceSelection/insertAtCursor` |
-| `http` | Menggunakan `CodeForge.http.get/post` |
+| `editor` | Menggunakan `CodeForge.editor.*` (kecuali `getLanguage` dan `getCursorPosition`) |
+| `http` | Menggunakan `CodeForge.http.get` / `post` |
+
+> **`storage`, `clipboard`, `file`, dan `share` tidak membutuhkan permission** — langsung bisa dipakai tanpa deklarasi.
 
 Jika plugin memanggil API yang butuh permission tapi tidak dideklarasikan, plugin akan **crash dan otomatis dinonaktifkan** oleh CodeForge.
 
@@ -422,51 +591,51 @@ CodeForge.events.on('fileOpen', function() {
 });
 ```
 
----
+### HTTP Plugin dengan Loading Guard dan saveSelection
 
-## Catatan Pengembangan Platform
+**manifest.json**
+```json
+{
+  "id": "com.example.ai-helper",
+  "name": "AI Helper",
+  "version": "1.0.0",
+  "description": "Kirim seleksi ke API dan replace hasilnya",
+  "author": "Nama Kamu",
+  "entry": "main.js",
+  "permissions": ["editor", "http"]
+}
+```
 
-> Bagian ini ditujukan untuk developer yang mengembangkan CodeForge itu sendiri, bukan untuk pembuat plugin.
-
-### Listener accumulation saat ganti file
-
-Setiap kali file dibuka, seluruh plugin di-reinject ulang via `injectPlugins()`. Ini menyebabkan handler baru didaftarkan ke `__cfListeners` tanpa menghapus handler lama. Setelah beberapa kali ganti file, satu event bisa men-trigger banyak handler duplikat dari sesi sebelumnya.
-
-**Solusi:** Reset `__cfListeners` sebelum `emitFileOpen` dipanggil, misalnya dengan menambahkan fungsi `__cfResetListeners()` yang dipanggil dari `MonacoWebView.emitFileOpen()` sebelum emit event-nya.
-
+**main.js**
 ```js
-// Di index.html — tambahkan fungsi ini
-function __cfResetListeners() {
-    __cfListeners = {};
-}
+var isProcessing = false;
+
+CodeForge.commands.register('runAi', function() {
+    if (isProcessing) { CodeForge.ui.showToast('Tunggu sebentar...'); return; }
+    var sel = CodeForge.editor.getSelection();
+    if (!sel) { CodeForge.ui.showToast('Pilih teks dulu'); return; }
+
+    // Simpan selection sebelum request async
+    var savedRange = CodeForge.editor.saveSelection();
+
+    isProcessing = true;
+    CodeForge.ui.showProgress('Memproses...');
+
+    CodeForge.http.post('https://api.example.com/fix', { code: sel }, {})
+        .then(function(body) {
+            // Pakai savedRange agar tidak salah posisi walaupun kursor sudah pindah
+            CodeForge.editor.replaceRange(savedRange, body);
+        })
+        .catch(function(err) {
+            CodeForge.ui.showToast('Error: ' + err.message);
+        })
+        .then(function() {
+            isProcessing = false;
+            CodeForge.ui.hideProgress();
+        });
+});
+
+CodeForge.events.on('fileOpen', function() {
+    CodeForge.ui.addToolbarButton('runAi', '✨ Fix');
+});
 ```
-
-```kotlin
-// Di MonacoWebView.kt — panggil reset sebelum emit
-fun emitFileOpen(fileName: String, language: String) {
-    eval("__cfResetListeners()")
-    val safeFile = fileName.replace("'", "\\'")
-    val safeLang = language.replace("'", "\\'")
-    eval("if(typeof __cfEmitFileOpen==='function') __cfEmitFileOpen('$safeFile','$safeLang')")
-}
-```
-
-### HTTP response body — UTF-8 garbled untuk non-ASCII
-
-`resolveHttpCallback` di `MonacoWebView.kt` mengirim body ke JS via `atob()` saja, tanpa `decodeURIComponent(escape(...))`. Akibatnya karakter non-ASCII di response body (huruf aksen, karakter Asia, emoji) akan muncul garbled di sisi plugin. Berbeda dengan `setContentBase64` dan `insertAtCursorBase64` yang sudah pakai pattern yang benar.
-
-**Solusi di `MonacoWebView.kt`:**
-
-```kotlin
-// Sebelum
-eval("if(typeof __cfHttpResult==='function') __cfHttpResult('$safeId',$success,atob('$safeBody'))")
-
-// Sesudah
-eval("if(typeof __cfHttpResult==='function') __cfHttpResult('$safeId',$success,decodeURIComponent(escape(atob('$safeBody'))))")
-```
-
-### `replaceSelection` tidak mendukung saved range
-
-`replaceSelection` selalu menarget `editor.getSelection()` saat dipanggil. Tidak ada cara untuk menyimpan range dari sisi plugin dan menggunakannya setelah operasi async selesai. Ini menjadi masalah nyata untuk plugin berbasis HTTP — user bisa memindahkan kursor selagi menunggu response.
-
-**Solusi jangka panjang:** Tambahkan API `replaceRange(line, col, endLine, endCol, text)` di plugin context, atau expose `savedSelection` yang bisa di-pass kembali ke `replaceAtRange`.
