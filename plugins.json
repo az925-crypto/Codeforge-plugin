@@ -43,5 +43,50 @@
     "author": "SynhXAlina",
     "category": "utility",
     "downloadUrl": "https://github.com/az925-crypto/Codeforge-plugin/releases/latest/download/com.syo.text-replacer-pro.cfplugin"
+  },
+  {
+    "id": "com.syo.code-streak",
+    "name": "Code Streak",
+    "version": "1.0.0",
+    "description": "Track coding streak dan progress harian",
+    "author": "SynhXAlina",
+    "category": "productivity",
+    "downloadUrl": "https://github.com/syoring/plugin-cf-newera/raw/refs/heads/main/com.syo.code-streak.cfplugin"
+  },
+  {
+    "id": "com.syo.code-statistics",
+    "name": "Code Statistics",
+    "version": "1.0.0",
+    "description": "Menampilkan statistik coding dan aktivitas editor",
+    "author": "SynhXAlina",
+    "category": "analytics",
+    "downloadUrl": "https://github.com/syoring/plugin-cf-newera/raw/refs/heads/main/com.syo.code-statistics.cfplugin"
+  },
+  {
+    "id": "com.syo.sya-ai-assistant",
+    "name": "Sya AI Assistant",
+    "version": "1.0.0",
+    "description": "AI assistant untuk membantu coding di editor",
+    "author": "SynhXAlina",
+    "category": "ai",
+    "downloadUrl": "https://github.com/syoring/plugin-cf-newera/raw/refs/heads/main/com.syo.sya-ai-assistant.cfplugin"
+  },
+  {
+    "id": "com.syo.css-ultimate-gen",
+    "name": "CSS Ultimate Generator",
+    "version": "1.0.0",
+    "description": "Generate CSS dengan cepat dan praktis",
+    "author": "SynhXAlina",
+    "category": "formatter",
+    "downloadUrl": "https://github.com/syoring/plugin-cf-newera/raw/refs/heads/main/com.syo.css-ultimate-gen.cfplugin"
+  },
+  {
+    "id": "com.syo.auto-doc-generator",
+    "name": "Auto Doc Generator",
+    "version": "1.0.0",
+    "description": "Generate dokumentasi otomatis dari code",
+    "author": "SynhXAlina",
+    "category": "productivity",
+    "downloadUrl": "https://github.com/syoring/plugin-cf-newera/raw/refs/heads/main/com.syo.auto-doc-generator.cfplugin"
   }
 ]
